@@ -1,0 +1,63 @@
+name: Build macOS pkg
+on:
+  push:
+    branches:
+      - "main"
+  pull_request: {}
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: false
+        default: false
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macOS-12
+        go:
+          - 1.17
+        pkgname:
+          - podman-installer-macos-amd64.pkg
+    steps:
+      # Enable tmate debugging of manually-triggered workflows if the input option was provided
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled }}
+        with:
+          limit-access-to-actor: true
+        timeout-minutes: 30
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Build macOS installer
+        run: cd contrib/pkginstaller && make ARCH=amd64 NO_CODESIGN=1 pkginstaller
+      - name: Upload macOS pkg artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: macOS pkg (${{ matrix.os }})
+          path: "./contrib/pkginstaller/out/${{ matrix.pkgname }}"
+      - name: Install pkg
+        run: sudo installer -pkg ./contrib/pkginstaller/out/${{ matrix.pkgname }} -target /
+      - name: Run podman machine init
+        run: /opt/podman/bin/podman machine init
+      - name: Run podman machine start
+        run: /opt/podman/bin/podman machine start
+      - name: Run podman info
+        run: /opt/podman/bin/podman info
+      - name: Run podman run hello
+        run: /opt/podman/bin/podman run hello
+      - name: Run podman machine stop
+        run: /opt/podman/bin/podman machine stop
+      - name: Run podman machine rm
+        run: |
+          /opt/podman/bin/podman machine rm << EOF
+          y
+          EOF
+
